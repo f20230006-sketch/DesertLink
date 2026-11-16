@@ -7,7 +7,13 @@ __pycache__/
 .env
 artifacts/
 upstream/
+.tools/
+*.zip
+*.hprof
+*.log
 *.tsbuildinfo
 local.properties
 .gradle/
 build/
+
+output/

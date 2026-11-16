@@ -4,7 +4,10 @@
 
 Safari convoy operators, with a radio node shared by each vehicle and a staffed rescue base. Tourists use a phone interface; the operator maintains the relay equipment. Start with one known route and scheduled vehicle passes rather than claiming arbitrary desert coverage.
 
-## Physical prototype
+## Android prototype
+
+The current hardware target is Android phones only. A Raspberry Pi is not required. The app includes a clearly labeled three-node on-device simulation, while physical BLE tests need at least two phones.
+
 
 The simulator works now. The next physical milestone is an Android phone exchanging persistent, versioned incident records with a Raspberry Pi 3 over BLE. Bitchat Android is the candidate existing transport implementation; it is cloned separately for evaluation and is not yet integrated. Pi interoperability must be implemented and tested; onboard Bluetooth does not automatically make the Pi a Bitchat node.
 
