@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+.venv/
+__pycache__/
+*.pyc
+.env
+artifacts/
+upstream/
+*.tsbuildinfo
+local.properties
+.gradle/
+build/
