@@ -32,10 +32,11 @@ The old SOS can still reach base first. An acknowledgment of that old message mu
 
 ## The demo
 
-[![Watch the Android demo walkthrough](docs/assets/05-old-ack-rejected.png)](docs/assets/desertlink-demo.mp4)
+<p align="center">
+  <a href="docs/assets/desertlink-demo.mp4"><img src="docs/assets/05-old-ack-rejected.png" alt="Watch the Android demo walkthrough" width="220" /></a>
+</p>
 
-**[Watch the 28-second Android walkthrough](docs/assets/desertlink-demo.mp4)** · A silent walkthrough assembled from real app-only phone captures of the simulated scenario. It demonstrates protocol states, not a physical BLE exchange. Captures show an early build; the current APK bundles DM Sans for consistent typography.
-
+**[Watch the 32-second Android walkthrough](docs/assets/desertlink-demo.mp4)** · A silent walkthrough assembled from real app-only phone captures of the simulated scenario. It demonstrates protocol states, not a physical BLE exchange. Captures show an early build; the current APK bundles DM Sans for consistent typography.
 
 The Android **Offline demo** tab runs the protocol locally with three independent ledgers. It is explicitly labeled as a simulation. It does not invent physical peers or claim a radio transfer.
 
@@ -49,19 +50,9 @@ The Android **Offline demo** tab runs the protocol locally with three independen
 8. **Return:** that exact acknowledgment reaches the source.
 
 <p align="center">
-  <img src="docs/assets/05-old-ack-rejected.png" alt="Old acknowledgment does not confirm revision two" width="280" />
-  <img src="docs/assets/08-current-version-confirmed.png" alt="Revision two confirmed after the correct acknowledgment returns" width="280" />
+  <img src="docs/assets/05-old-ack-rejected.png" alt="Old acknowledgment does not confirm revision two" width="240" />
+  <img src="docs/assets/08-current-version-confirmed.png" alt="Revision two confirmed after the correct acknowledgment returns" width="240" />
 </p>
-
-### Watch the Android walkthrough
-
-[![Watch the DESERTLINK Android demo](docs/assets/05-old-ack-rejected.png)](docs/assets/desertlink-demo.mp4)
-
-**[Play / download the 32-second walkthrough](docs/assets/desertlink-demo.mp4)** — assembled from real, app-only captures on the test phone. The shown contacts are the explicitly labeled on-device simulation, not measured Bluetooth exchanges.
-
-| Old acknowledgment returns | Correct revision confirmed |
-| --- | --- |
-| ![SOS v2 remains unconfirmed after an ACK for v1](docs/assets/05-old-ack-rejected.png) | ![SOS v2 confirmed after its own ACK returns](docs/assets/08-current-version-confirmed.png) |
 
 The browser simulator shows the larger topology and controlled failures:
 
