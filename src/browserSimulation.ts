@@ -2,7 +2,7 @@
 export type Packet = {id:string;source:string;destination:string;text:string;priority:'sos'|'routine';created:number;expires:number;kind:'message'|'ack';path:string[];incident:string;version:number;message_id?:string;location?:{lat:number;lon:number}};
 export type SimMessage = Packet & {status:string;delivered:number|null;confirmed:number|null;acknowledged:number|null;ack_path?:string[]};
 export type SimNode = {id:string;name:string;role:string;x:number;y:number;online:boolean;battery:number;direction?:number};
-type SimEvent = {id:string;time:number;kind:string;text:string;message:string|null};
+type SimEvent = {id:string;time:number;kind:string;text:string;message:string|null;from?:string;to?:string;packet_kind?:string};
 type World = {schema:1;time:number;running:boolean;config:{loss:number;speed:number;storm:boolean;routing:'direct'|'dtn'};nodes:SimNode[];messages:SimMessage[];events:SimEvent[];attempts:number;transfers:number;failed:number;random:number;queues:Record<string,Record<string,Packet>>;heads:Record<string,Record<string,number>>};
 export type StorageLike = Pick<Storage,'getItem'|'setItem'>;
 const KEY = 'desertlink.simulator.v1';
@@ -23,7 +23,7 @@ export class BrowserSimulation {
     this.save();
   }
   private random() { let x=this.world.random|0; x^=x<<13; x^=x>>>17; x^=x<<5; this.world.random=x>>>0; return this.world.random/4294967296; }
-  private event(kind:string,text:string,message:string|null=null) { this.world.events.unshift({id:crypto.randomUUID(),time:this.world.time,kind,text,message});this.world.events.length=Math.min(200,this.world.events.length); }
+  private event(kind:string,text:string,message:string|null=null,details:Partial<SimEvent>={}) { this.world.events.unshift({...details,id:crypto.randomUUID(),time:this.world.time,kind,text,message});this.world.events.length=Math.min(200,this.world.events.length); }
   private save() { if(this.storage)try{this.storage.setItem(KEY,JSON.stringify(this.world));this.persistent=true;}catch{this.persistent=false;} }
   reset() {
     const nodes:SimNode[]=[
@@ -67,6 +67,7 @@ export class BrowserSimulation {
       if(args.speed!==undefined){if(typeof args.speed!=='number'||args.speed<0||args.speed>80)throw Error('Speed must be between 0 and 80');w.config.speed=args.speed;}
       if(typeof args.storm==='boolean')w.config.storm=args.storm;
       if(args.routing==='direct'||args.routing==='dtn')w.config.routing=args.routing;
+      this.event('configuration',`Controls updated: ${w.config.speed} km/h, ${w.config.loss}% packet loss, ${w.config.storm?'storm':'clear'}, ${w.config.routing} routing. Changes affect future steps.`);
     }else if(action==='send'){
       if(w.messages.length>=200)throw Error('Scenario limit reached. Reset before sending more messages.');
       const text=typeof args.text==='string'?args.text.trim():'Vehicle immobilized. Two passengers need assistance.';
@@ -117,7 +118,7 @@ export class BrowserSimulation {
         if(this.random()*100<loss){w.failed++;this.event('loss',`Packet lost: ${sender.name} → ${receiver.name}. Sender retains its copy.`,packet.id);continue;}
         const received={...clone(packet),path:[...packet.path,receiver.id]};
         if(!this.put(receiver.id,received))continue;
-        w.transfers++;this.event('transfer',`${sender.name} → ${receiver.name} · ${packet.kind==='ack'?'ACK':packet.priority.toUpperCase()} v${packet.version}`,packet.id);
+        w.transfers++;this.event('transfer',`${sender.name} → ${receiver.name} · ${packet.kind==='ack'?'ACK':packet.priority.toUpperCase()} v${packet.version}`,packet.id,{from:sender.id,to:receiver.id,packet_kind:packet.kind});
         const m=w.messages.find(m=>m.id===(packet.message_id||packet.id));if(!m)continue;
         if(receiver.id===packet.destination){
           if(packet.kind==='ack'&&m.acknowledged===null){m.acknowledged=w.time;m.status='acknowledged';m.ack_path=received.path;this.event('success',`ACK for v${m.version} reached Safari 01.`,m.id);}
@@ -130,5 +131,8 @@ export class BrowserSimulation {
   snapshot(){
     const w=this.world,delivered=w.messages.filter(m=>m.delivered!==null);
     return clone({time:w.time,running:w.running,config:w.config,nodes:w.nodes.map(n=>({...n,queue:this.inventory(n.id).length,packets:this.inventory(n.id).map(p=>p.id)})),links:this.links().map(([a,b])=>[a.id,b.id]),messages:w.messages,events:w.events,attempts:w.attempts,transfers:w.transfers,failed:w.failed,metrics:{sent:w.messages.length,delivered:delivered.length,delivery_rate:w.messages.length?Math.round(100*delivered.length/w.messages.length):0}});
+  }
+  report(){
+    return clone({...this.snapshot(),schema_version:2,simulation_only:true,units:{time:'simulated seconds',position:'synthetic km',speed:'km/h',loss:'percent'},node_stores:this.world.queues,revision_watermarks:this.world.heads,notes:['Each browser has its own scenario; this is not Android telemetry.','Delivery delay is measured at arrival; changing controls does not rewrite past results.','Event history retains the latest 200 events.']});
   }
 }

@@ -227,6 +227,12 @@ The upstream Android `LICENSE.md` contains **GPL-3.0**. This repository preserve
 
 **Live demo: [desertlink.vercel.app](https://desertlink.vercel.app)** — Send SOS, advance the simulation until rescue receives it, click **Acknowledge**, and continue until **Confirmed at source**. Packet loss can delay both journeys.
 
+Use **Start guided demo** for a ready-made SOS, or **Send SOS** to enter your own text. The incident card above the map shows the payload, revision, illustrative coordinates, expiry, current copy holders, and acknowledgment stages. Orange arrows mark recent packet transfers; green lines mean radio contact is possible. The latest transfer remains readable in the incident card after an arrow disappears.
+
+**Testing controls:** relay speed changes movement only when you play or step time. At 40 km/h, one 60-second step moves a vehicle about 0.67 km. Delivery delay is an observed arrival time, not a setting; changing speed does not rewrite earlier results. For a fair comparison, reset, set loss to 0%, choose a speed, send the same SOS, and repeat from reset at another speed. Contact timing and packet loss can also affect arrival.
+
+**Export report** becomes available after sending an SOS. Its JSON includes incident values, per-node packet contents, configuration, metrics, and the latest 200 events, including control changes and directional transfers. Each visitor's scenario is local to their browser.
+
 Vercel builds with `npm run build:demo`. The hosted site runs the contact simulator in each visitor’s browser, with isolated node queues, local persistence, and no Python server or WebSocket dependency. It is a software simulation, not an internet bridge for Android SOS messages. Local Python/SQLite mode remains available with `npm run build`.
 
 Production is deployed through the Vercel CLI. Automatic deployment from GitHub pushes is not configured yet.

@@ -60,3 +60,22 @@ test('invalid saved data resets safely and a base cannot ACK an unseen message',
  const storage=new MemoryStorage();storage.setItem('desertlink.simulator.v1','not-json');const sim=new BrowserSimulation(storage);
  assert.equal(sim.snapshot().nodes.length,5);assert.throws(()=>sim.command('ack',{message_id:'unknown'}));
 });
+
+test('speed controls change future movement and arrival time, not past delivery metrics',()=>{
+ function run(speed){const sim=engine();sim.command('configure',{speed});sim.command('send',{ttl:7200});until(sim,s=>s.messages[0].delivered!==null,120);return sim;}
+ const slow=run(20),fast=run(60);
+ assert.ok(fast.snapshot().messages[0].delivered<slow.snapshot().messages[0].delivered);
+ const arrival=fast.snapshot().messages[0].delivered;
+ fast.command('configure',{speed:0});const before=fast.snapshot().nodes.find(n=>n.id==='relay1');fast.step();const after=fast.snapshot().nodes.find(n=>n.id==='relay1');
+ assert.ok(Math.abs(before.x-after.x)<1e-10);assert.ok(Math.abs(before.y-after.y)<1e-10);assert.equal(fast.snapshot().messages[0].delivered,arrival);
+});
+
+test('report includes SOS values, independent packet contents, directional transfers and control history',()=>{
+ const sim=engine();const m=sim.command('send',{text:'Synthetic test SOS'}).messages[0];sim.step();
+ const report=JSON.parse(JSON.stringify(sim.report()));
+ assert.equal(report.messages[0].text,'Synthetic test SOS');assert.equal(report.node_stores.safari[m.id].text,'Synthetic test SOS');
+ assert.equal(report.node_stores.relay1[m.id].version,1);assert.equal(Object.keys(report.node_stores.base).length,0);
+ assert.ok(report.events.some(e=>e.kind==='transfer'&&e.from==='safari'&&e.to==='relay1'));
+ assert.ok(report.events.some(e=>e.kind==='configuration'));assert.equal(report.units.time,'simulated seconds');
+ report.node_stores.safari[m.id].text='Mutated export';assert.equal(sim.report().node_stores.safari[m.id].text,'Synthetic test SOS');
+});
