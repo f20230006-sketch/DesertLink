@@ -80,7 +80,7 @@ Our application layer focuses on **which emergency revision a rescue operator ac
 
 No node can know about an update it has never encountered. The UI communicates that uncertainty.
 
-## Try it
+## Try it : https://desertlink.vercel.app/
 
 ### On one Android phone
 
