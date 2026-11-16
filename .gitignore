@@ -17,3 +17,7 @@ local.properties
 build/
 
 output/
+
+.vercel/
+.vercel
+.env*

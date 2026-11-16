@@ -330,7 +330,7 @@ class MainActivity : OrientationAwareActivity() {
 
                 // Add the callback - this will be automatically removed when the activity is destroyed
                 onBackPressedDispatcher.addCallback(this, backCallback)
-                com.bitchat.android.desertlink.DesertLinkScreen(viewModel = chatViewModel)
+                com.bitchat.android.desertlink.DesertLinkScreen(store = chatViewModel.rescue)
             }
             
             OnboardingState.ERROR -> {

@@ -7,6 +7,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -21,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bitchat.android.ui.ChatViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -49,110 +58,239 @@ internal val DesertTypography = Typography().let { base -> base.copy(
     labelSmall = base.labelSmall.copy(fontFamily = DesertFont)
 ) }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DesertLinkScreen(viewModel: ChatViewModel) {
-    val state by viewModel.rescue.state.collectAsStateWithLifecycle()
-    var tab by remember { mutableIntStateOf(0) }
-    var compose by remember { mutableStateOf(false) }
+fun DesertLinkScreen(store: RescueStore, readiness: RadioReadiness = RadioReadiness(),
+    updater: AppUpdater? = null, onEnableBluetooth: () -> Unit = {}, onInstallUpdate: () -> Unit = {}) {
+    val state by store.state.collectAsStateWithLifecycle()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var filter by rememberSaveable { mutableStateOf("Active") }
+    var detailId by rememberSaveable { mutableStateOf<String?>(null) }
+    var composer by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RescueRecord?>(null) }
-    var text by remember { mutableStateOf("") }
-    var settings by remember { mutableStateOf(false) }
-    var trust by remember { mutableStateOf("") }
+    var raw by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("Breakdown") }
+    var people by remember { mutableIntStateOf(1) }
+    var landmark by remember { mutableStateOf("") }
+    var notes by remember { mutableStateOf("") }
+    var openedAt by remember { mutableLongStateOf(0L) }
+    var trust by remember(state.trustedRescue) { mutableStateOf(state.trustedRescue) }
+    var resolving by remember { mutableStateOf<RescueRecord?>(null) }
+    val snackbar = remember { SnackbarHostState() }
     val clipboard = LocalClipboardManager.current
-    val latest = state.records.filter { it.kind == "sos" }.sortedByDescending { it.created }
-    val mine = latest.filter { it.fingerprint == state.fingerprint }
-
-    MaterialTheme(typography = DesertTypography, colorScheme = lightColorScheme(primary = Forest, secondary = Orange, background = Sand,
-        surface = Sand, onPrimary = Color.White, onSurface = Forest, onBackground = Forest)) {
-        Surface(Modifier.fillMaxSize(), color = Sand) {
-            Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-                Row(Modifier.fillMaxWidth().padding(22.dp, 14.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column { Text("DESERTLINK", fontWeight = FontWeight.ExtraBold, fontSize = 23.sp, letterSpacing = (-1).sp)
-                        Text("CONNECTION BEYOND COVERAGE", fontSize = 8.sp, letterSpacing = 1.5.sp, color = Muted) }
-                    TextButton(onClick = { trust = state.trustedRescue; settings = true }) { Text("Identity") }
+    val selected = state.incidents.firstOrNull { it.incident == detailId }
+    val owned = state.incidents.filter { it.fingerprint == state.fingerprint }
+    val active = state.incidents.filter { it.expires > state.now && !RescueOperations.isResolved(it) }
+    val actionable = active.count { it.fingerprint != state.fingerprint && state.evidence.none { ack -> ack.kind == "ack" && ack.target == it.id && ack.fingerprint == state.fingerprint } }
+    fun openComposer(record: RescueRecord? = null) { editing = record; raw = record?.text ?: ""; notes = ""; landmark = ""; people = 1; category = "Breakdown"; openedAt = state.operation; composer = true }
+    LaunchedEffect(state.operation) {
+        if (state.operation > 0 && state.actionSucceeded) {
+            if (composer && state.operation > openedAt) composer = false
+            snackbar.showSnackbar(state.notice)
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = detailId != null) { detailId = null }
+    MaterialTheme(typography = DesertTypography, colorScheme = lightColorScheme(primary = Forest, secondary = Orange,
+        background = Sand, surface = Sand, onPrimary = Color.White, onSurface = Forest, onBackground = Forest)) {
+        Scaffold(containerColor = Sand, snackbarHost = { SnackbarHost(snackbar) }, bottomBar = {
+            NavigationBar(containerColor = Color(0xFFEAEEE5), tonalElevation = 0.dp) {
+                listOf("Operations", "Network", "Demo").forEachIndexed { index, label ->
+                    NavigationBarItem(selected = tab == index && detailId == null, onClick = { tab = index; detailId = null },
+                        icon = { Icon(when (index) { 0 -> Icons.Outlined.Home; 1 -> Icons.Outlined.Bluetooth; else -> Icons.Outlined.Science }, contentDescription = null) },
+                        label = { Text(label, fontSize = 12.sp) })
+                }
+            }
+        }) { padding ->
+            Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (selected != null) IconButton(onClick = { detailId = null }) { Icon(Icons.Outlined.ArrowBack, "Back to incidents") }
+                    Column(Modifier.weight(1f)) {
+                        Text("DESERTLINK", fontWeight = FontWeight.ExtraBold, fontSize = 23.sp, letterSpacing = (-1).sp)
+                        Text(if (selected != null) "INCIDENT DETAILS" else "BLUETOOTH RESCUE NETWORK", fontSize = 9.sp, letterSpacing = 1.2.sp, color = Muted)
+                    }
+                    Surface(color = if (state.networkRunning) Color(0xFFE0E8D8) else Color(0xFFF2E2D2), shape = RoundedCornerShape(20.dp)) {
+                        Text(if (state.networkRunning) "BLE ON" else "BLE OFF", Modifier.padding(10.dp, 6.dp), fontSize = 10.sp, color = Forest)
+                    }
                 }
                 HorizontalDivider(color = Color(0xFFD5DBCF))
-                TabRow(selectedTabIndex = tab, containerColor = Sand) {
-                    Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Live Bluetooth") })
-                    Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Offline demo") })
-                }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(22.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                    if (tab == 0) {
-                        Text("Help can travel.\nEven when you can’t.", fontSize = 31.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
-                        Text("SOS messages stay on this phone, then travel with nearby Bluetooth devices running DESERTLINK.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Stat("BLE PEERS", "${state.peers}", Modifier.weight(1f))
-                            Stat("STORED", "${state.records.size}", Modifier.weight(1f))
-                            Stat("TX ATTEMPTS", "${state.transmissions}", Modifier.weight(1f))
-                        }
-                        Text("${if (state.peers == 0) "● No peer in range" else "● Bluetooth contacts available"}  ·  ${state.role.replaceFirstChar { it.uppercase() }}", color = if (state.peers == 0) Orange else Forest, fontSize = 12.sp)
-                        Text(state.notice, fontSize = 12.sp, lineHeight = 18.sp, color = Muted)
-                        Button(onClick = { editing = null; text = "Vehicle immobilized. Need assistance."; compose = true },
-                            enabled = state.ready, modifier = Modifier.fillMaxWidth().height(54.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) {
-                            Text("Send an SOS", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Text("INCIDENTS", fontSize = 10.sp, letterSpacing = 2.sp, color = Muted)
-                        if (latest.isEmpty()) CardBlock {
-                            Text("No incidents stored.", fontWeight = FontWeight.Medium)
-                            Text("Create an SOS, or try the offline demo with simulated nodes.", fontSize = 12.sp, color = Muted, lineHeight = 19.sp)
-                        }
-                        latest.forEach { record ->
-                            val owned = record.fingerprint == state.fingerprint
-                            val receipts = state.records.filter { it.target == record.id }
-                            val confirmed = receipts.any { it.kind == "ack" && state.trustedRescue.isNotBlank() && it.fingerprint == state.trustedRescue }
-                            val received = receipts.any { it.kind == "receipt" && state.trustedRescue.isNotBlank() && it.fingerprint == state.trustedRescue }
-                            CardBlock {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("SOS · v${record.revision}", color = Orange, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                    Text(if (owned) "YOUR INCIDENT" else "CARRIED INCIDENT", fontSize = 9.sp, color = Muted)
+                    state.error?.let { error ->
+                        CardBlock { Text(error, color = Color(0xFFA54129), fontSize = 13.sp); TextButton(onClick = store::dismissError) { Text("Dismiss") } }
+                    }
+                    if (!state.ready && state.error == null) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Opening your saved incidents…", color = Muted)
+                    } else if (selected != null) {
+                        val mine = selected.fingerprint == state.fingerprint
+                        val progress = RescueOperations.progress(selected, state.evidence, state.trustedRescue, state.now)
+                        val localAck = state.evidence.any { it.kind == "ack" && it.target == selected.id && it.fingerprint == state.fingerprint }
+                        Text(if (RescueOperations.isResolved(selected)) "Resolution · v${selected.revision}" else "SOS · v${selected.revision}", color = Orange, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(selected.text, fontSize = 26.sp, lineHeight = 33.sp, fontWeight = FontWeight.SemiBold)
+                        CardBlock {
+                            Text(if (mine) phaseTitle(progress.phase) else if (localAck) "You confirmed this revision" else "Saved on this device", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (mine) phaseExplanation(progress.phase) else if (state.role == "rescue") "Confirm the exact version you have read. The sender will see confirmation only after your ACK travels back." else "This phone carries a copy for onward Bluetooth forwarding.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                            if (mine) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                listOf("Saved", "Carried", "Received", "Confirmed").forEachIndexed { i, label ->
+                                    val reached = progress.phase != IncidentPhase.EXPIRED && progress.phase.ordinal >= i
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(if (reached) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked, null, tint = if (reached) Forest else Muted, modifier = Modifier.size(22.dp))
+                                        Text(label, fontSize = 10.sp, color = Muted)
+                                    }
                                 }
-                                Text(record.text, fontSize = 17.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium)
-                                Text(when {
-                                    confirmed -> "✓ Trusted operator confirmed v${record.revision}"
-                                    received -> "Delivered to trusted rescue node · awaiting operator"
-                                    receipts.any { it.kind == "ack" } -> "Operator ACK received · identity not trusted yet"
-                                    receipts.isNotEmpty() -> "Receipt received · rescue identity not trusted yet"
-                                    owned -> "Stored locally · destination unconfirmed"
-                                    else -> "Stored here for onward forwarding"
-                                }, color = if (confirmed) Forest else Orange, fontSize = 12.sp, lineHeight = 18.sp)
-                                Text("Created ${clock(record.created)} · expires ${clock(record.expires)}", color = Muted, fontSize = 10.sp)
-                                if (owned) OutlinedButton(onClick = { editing = record; text = record.text; compose = true }) { Text("Update while disconnected") }
-                                if (!owned && state.role == "rescue") Button(onClick = { viewModel.rescue.acknowledge(record) }) { Text("Confirm receipt of v${record.revision}") }
+                            }
+                            Text("${progress.carriers} signed relay-copy receipt${if (progress.carriers == 1) "" else "s"} for this revision", fontSize = 11.sp, color = Muted)
+                            if (progress.untrustedAcknowledgment) Text("An ACK exists, but its signing identity is not your trusted rescue identity. Verify the operator’s code in Network.", color = Orange, fontSize = 12.sp)
+                        }
+                        Text("Created ${clock(selected.created)} · ${remaining(selected.expires, state.now)}", color = Muted, fontSize = 12.sp)
+                        if (mine) {
+                            Button(onClick = { openComposer(selected) }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text(if (selected.expires <= state.now) "Renew this SOS" else "Update situation / urgency") }
+                            if (!RescueOperations.isResolved(selected)) OutlinedButton(onClick = { resolving = selected }, enabled = !state.busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp)) { Text("Mark resolved and notify the network") }
+                        } else if (state.role == "rescue" && selected.expires > state.now) {
+                            Button(onClick = { store.acknowledge(selected) }, enabled = !localAck && !state.busy, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) { Text(if (localAck) "ACK saved for return journey" else "I have read and confirm v${selected.revision}") }
+                        }
+                        SectionTitle("LOCAL EVENT HISTORY")
+                        val timeline = state.events.filter { it.incident == selected.incident }
+                        if (timeline.isEmpty()) Text("No earlier events retained for this incident.", color = Muted, fontSize = 12.sp)
+                        timeline.forEach { e -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text(clock(e.time), color = Muted, fontSize = 11.sp)
+                            Text("v${e.revision} · ${e.title}", fontSize = 12.sp, lineHeight = 19.sp)
+                        } }
+                    } else if (tab == 0) {
+                        Text(when (state.role) { "rescue" -> "Rescue operations"; "relay" -> "Carry the connection."; else -> "You’re never just a dot\non the map." }, fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.8).sp)
+                        Text(when (state.role) { "rescue" -> "Read incoming incidents. Confirm the exact revision you received."; "relay" -> "Nearby SOS messages stay saved here and travel at the next Bluetooth encounter."; else -> "Create an SOS without signal. A passing device can carry it to rescue." }, color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                        if (!state.roleChosen) CardBlock {
+                            Text("First, choose this phone’s role", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                            Text("You can change it later. All three roles can carry messages.", color = Muted, fontSize = 12.sp)
+                            RoleChoices(state.role, store::setRole)
+                        }
+                        if (!readiness.permissions || !readiness.enabled || !state.networkRunning) CardBlock {
+                            Text(when { !readiness.supported -> "Bluetooth is not available on this device"; !readiness.permissions -> "Allow nearby-device access"; !readiness.enabled -> "Turn Bluetooth on"; else -> "Starting the Bluetooth network…" }, fontWeight = FontWeight.SemiBold)
+                            Text("No Wi-Fi or mobile data is needed. You can still create an SOS while offline; it stays on this phone.", fontSize = 12.sp, lineHeight = 19.sp, color = Muted)
+                            if (readiness.supported) OutlinedButton(onClick = onEnableBluetooth) { Text(if (!readiness.permissions) "Set up Bluetooth" else "Start / retry Bluetooth") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Stat("NEARBY PEERS", "${state.peers}", Modifier.weight(1f))
+                            Stat(if (state.role == "rescue") "TO CONFIRM" else "ACTIVE SOS", "${if (state.role == "rescue") actionable else active.size}", Modifier.weight(1f))
+                        }
+                        if (!state.forwarding) Notice("Forwarding is paused. Received messages remain saved.")
+                        Button(onClick = { openComposer() }, enabled = state.ready && !state.busy, modifier = Modifier.fillMaxWidth().height(54.dp), colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) { Icon(Icons.Outlined.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(10.dp)); Text("Create an SOS", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Active", "Mine", "Received", "History").forEach { name -> FilterChip(selected = filter == name, onClick = { filter = name }, label = { Text(name) }) }
+                        }
+                        val visible = when (filter) { "Mine" -> owned; "Received" -> state.incidents.filter { it.fingerprint != state.fingerprint }; "History" -> state.incidents; else -> active }
+                        if (visible.isEmpty()) CardBlock {
+                            Text(if (filter == "Active") "No active incidents" else "Nothing here yet", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                            Text(if (state.peers == 0) "No nearby peer is connected. An SOS you create will wait safely in local storage." else "This view fills when an incident is created or received.", color = Muted, fontSize = 13.sp, lineHeight = 20.sp)
+                            TextButton(onClick = { tab = 2 }) { Text("Try the three-node offline demo") }
+                        }
+                        visible.forEach { r ->
+                            val progress = RescueOperations.progress(r, state.evidence, state.trustedRescue, state.now)
+                            Surface(onClick = { detailId = r.incident }, color = Color(0xFFFAF9F4), shape = RoundedCornerShape(9.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFD5DBCF)), modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("${if (RescueOperations.isResolved(r)) "RESOLVED" else "SOS"} · v${r.revision}", color = Orange, fontSize = 11.sp, fontWeight = FontWeight.Bold); Text(if (r.fingerprint == state.fingerprint) "YOURS" else "RECEIVED", fontSize = 10.sp, color = Muted) }
+                                    Text(r.text, fontSize = 16.sp, lineHeight = 23.sp, fontWeight = FontWeight.Medium, maxLines = 3)
+                                    Text(if (r.fingerprint == state.fingerprint) phaseTitle(progress.phase) else if (r.expires <= state.now) "Expired · retained in history" else "Saved here · open for details", fontSize = 12.sp, color = Forest)
+                                    Text("${remaining(r.expires, state.now)} · View journey →", fontSize = 10.sp, color = Muted)
+                                }
                             }
                         }
-                        if (mine.isNotEmpty()) Text("Updates stay local until a future contact. An ACK for v1 never confirms v2.", fontSize = 11.sp, color = Muted, lineHeight = 18.sp)
-                        Text("Public SOS payloads are signed, not encrypted. Use synthetic details for this prototype. No live GPS is collected by DESERTLINK’s incident screen.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp)
-                    } else {
-                        OfflineDemoContent()
-                    }
-                    HorizontalDivider(color = Color(0xFFD5DBCF))
-                    Text("BLE transport powered by Bitchat · GPL-3.0\nDESERTLINK rescue layer · Hackathon prototype\nNo connection or future contact means no delivery guarantee.", color = Muted, fontSize = 10.sp, lineHeight = 17.sp)
+                    } else if (tab == 1) {
+                        Text("Your network,\nyour control.", fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold)
+                        CardBlock {
+                            Text("Bluetooth operations", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("${state.peers} nearby mesh peers · ${state.records.size} active records · ${state.transmissions} transmit requests", fontSize = 12.sp, color = Muted)
+                            SettingSwitch("Forward stored messages", "Pause outgoing offers without deleting incidents.", state.forwarding, store::forwarding)
+                            SettingSwitch("Conserve battery", "Retry older records every 45 seconds instead of 15.", state.batterySaver, store::batterySaver)
+                            OutlinedButton(onClick = store::syncNow, enabled = !state.busy && state.forwarding) { Text("Offer pending records at next contact") }
+                            Text("A transmit request does not prove delivery. Only signed receipts and the exact operator ACK change the incident’s status.", fontSize = 11.sp, lineHeight = 18.sp, color = Muted)
+                        }
+                        CardBlock {
+                            Text("This phone’s role", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            RoleChoices(state.role, store::setRole)
+                            Text("Traveller creates an SOS. Relay carries copies. Rescue reads and explicitly confirms them. Every role can forward.", fontSize = 12.sp, lineHeight = 19.sp, color = Muted)
+                        }
+                        CardBlock {
+                            Text("Trust the rescue identity", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Verify this full code directly with your rescue operator before treating an ACK as trusted.", fontSize = 12.sp, lineHeight = 19.sp, color = Muted)
+                            OutlinedTextField(value = trust, onValueChange = { trust = it }, label = { Text("Rescue fingerprint or pairing code") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                            Button(onClick = { store.trust(trust) }, enabled = !state.busy && (trust.isBlank() || trust.trim().lowercase().removePrefix("desertlink:rescue:").replace(" ", "").matches(Regex("[0-9a-f]{64}")))) { Text("Save trusted identity") }
+                            Text("THIS DEVICE’S SIGNING FINGERPRINT", fontSize = 9.sp, color = Muted, letterSpacing = 1.sp)
+                            SelectionContainer { Text(state.fingerprint.chunked(8).joinToString(" "), fontSize = 11.sp, lineHeight = 19.sp) }
+                            TextButton(onClick = { clipboard.setText(AnnotatedString("desertlink:rescue:${state.fingerprint}")) }) { Icon(Icons.Outlined.ContentCopy, null, Modifier.size(15.dp)); Spacer(Modifier.width(7.dp)); Text("Copy pairing code") }
+                            Text("A role label is not proof of authority. Public SOS payloads are signed, not encrypted.", fontSize = 11.sp, color = Orange, lineHeight = 18.sp)
+                        }
+                        if (updater != null) UpdatePanel(updater, onInstallUpdate)
+                        Text("BLE delivery depends on future contacts and Android allowing the foreground service to run. No delivery is guaranteed across a permanent gap.", fontSize = 11.sp, color = Muted, lineHeight = 18.sp)
+                    } else OfflineDemoContent()
+                    Spacer(Modifier.height(4.dp))
+                    Text("Hackathon prototype · Bitchat BLE foundation · GPL-3.0\nUse synthetic details for testing. This is not a production emergency service.", fontSize = 10.sp, lineHeight = 16.sp, color = Muted)
                 }
             }
         }
-        if (compose) AlertDialog(onDismissRequest = { compose = false }, title = { Text(if (editing == null) "Create an SOS" else "Create revision ${editing!!.revision + 1}") }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Saved locally first. No peer nearby means it waits here.", fontSize = 12.sp)
-                OutlinedTextField(value = text, onValueChange = { if (it.length <= 160) text = it }, label = { Text("Situation · ${text.length}/160") }, minLines = 3)
-                Text("Use demo details. Do not rely on this prototype for real emergencies.", color = Orange, fontSize = 11.sp)
+        if (composer) {
+            val message = if (editing != null) raw else RescueOperations.composeSituation(category, people, landmark, notes)
+            ModalBottomSheet(onDismissRequest = { if (!state.busy) composer = false }, containerColor = Sand) {
+                Column(Modifier.fillMaxWidth().imePadding().verticalScroll(rememberScrollState()).padding(horizontal = 22.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(15.dp)) {
+                    Text(if (editing == null) "What help do you need?" else "Update to v${editing!!.revision + 1}", fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Saved locally first. Your update waits here if nobody is in Bluetooth range.", fontSize = 12.sp, color = Muted, lineHeight = 19.sp)
+                    if (editing == null) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf("Breakdown", "Medical", "Water", "Lost", "Other").forEach { kind -> FilterChip(selected = category == kind, onClick = { category = kind }, label = { Text(kind) }) } }
+                        Row(verticalAlignment = Alignment.CenterVertically) { Text("People needing help", Modifier.weight(1f)); OutlinedButton(onClick = { people-- }, enabled = people > 1) { Text("−") }; Text("$people", Modifier.padding(horizontal = 12.dp)); OutlinedButton(onClick = { people++ }, enabled = people < 20) { Text("+") } }
+                        OutlinedTextField(value = landmark, onValueChange = { if (it.length <= 45) landmark = it }, label = { Text("Nearest landmark (optional)") }, supportingText = { Text("Enter a description manually. No GPS is collected.", fontSize = 10.sp) }, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(value = notes, onValueChange = { if (it.length <= 120) notes = it }, label = { Text("Situation / urgency") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+                    } else OutlinedTextField(value = raw, onValueChange = { if (it.length <= 160) raw = it }, label = { Text("Updated situation") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                    CardBlock { Text("MESSAGE PREVIEW · ${message.length}/160", fontSize = 10.sp, color = if (message.length > 160) Orange else Muted); Text(message, fontSize = 14.sp, lineHeight = 21.sp) }
+                    if (state.error != null) Text(state.error!!, color = Orange, fontSize = 12.sp)
+                    Button(onClick = { store.send(message, editing?.incident) }, enabled = !state.busy && message.isNotBlank() && message.length <= 160, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) { Text(if (state.busy) "Saving on this phone…" else if (editing == null) "Save SOS and wait for a contact" else "Save the new revision") }
+                }
             }
-        }, confirmButton = { TextButton(onClick = { viewModel.rescue.send(text, editing?.incident); compose = false }, enabled = text.isNotBlank()) { Text("Save SOS locally") } }, dismissButton = { TextButton(onClick = { compose = false }) { Text("Cancel") } })
-        if (settings) AlertDialog(onDismissRequest = { settings = false }, title = { Text("Device & rescue identity") }, text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("YOUR SIGNING FINGERPRINT", fontSize = 10.sp, color = Muted)
-                Text(state.fingerprint, fontSize = 10.sp, lineHeight = 16.sp)
-                TextButton(onClick = { clipboard.setText(AnnotatedString(state.fingerprint)) }) { Text("Copy fingerprint") }
-                Text("This phone acts as", fontSize = 12.sp)
-                Row { listOf("traveller", "relay", "rescue").forEach { role ->
-                    FilterChip(selected = state.role == role, onClick = { viewModel.rescue.setRole(role) }, label = { Text(role.replaceFirstChar { it.uppercase() }, fontSize = 10.sp) }, modifier = Modifier.padding(end = 4.dp))
-                } }
-                OutlinedTextField(value = trust, onValueChange = { trust = it }, label = { Text("Trusted rescue fingerprint") }, supportingText = { Text("Verify the full 64-character code directly with the rescue operator. A self-selected role is not proof of identity.", fontSize = 10.sp) }, minLines = 2)
-                Text("BLE transport uses the upstream foreground service. For the first demo, keep the app visible. Physical range and background behavior must be tested on actual devices.", fontSize = 11.sp, color = Muted)
-            }
-        }, confirmButton = { TextButton(onClick = { viewModel.rescue.trust(trust); settings = false }, enabled = trust.isBlank() || trust.trim().replace(" ", "").matches(Regex("[0-9a-fA-F]{64}"))) { Text("Save identity settings") } }, dismissButton = { TextButton(onClick = { settings = false }) { Text("Close") } })
+        }
+        resolving?.let { record -> AlertDialog(onDismissRequest = { resolving = null }, title = { Text("Mark this incident resolved?") }, text = { Text("A new signed revision will say assistance is no longer requested. Devices that are out of range may still have the older SOS until they encounter the update.") }, confirmButton = { TextButton(onClick = { store.resolve(record); resolving = null }) { Text("Save resolution revision") } }, dismissButton = { TextButton(onClick = { resolving = null }) { Text("Keep incident active") } }) }
     }
 }
+
+@Composable private fun RoleChoices(role: String, select: (String) -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        listOf("traveller", "relay", "rescue").forEach { value -> FilterChip(selected = role == value, onClick = { select(value) }, label = { Text(value.replaceFirstChar { it.uppercase() }, fontSize = 12.sp) }) }
+    }
+}
+@Composable private fun SectionTitle(text: String) { Text(text, fontSize = 10.sp, letterSpacing = 1.4.sp, color = Muted) }
+@Composable private fun Notice(text: String) { Surface(color = Color(0xFFF2E2D2), shape = RoundedCornerShape(6.dp)) { Text(text, Modifier.padding(12.dp), fontSize = 12.sp, lineHeight = 18.sp, color = Forest) } }
+@Composable private fun SettingSwitch(title: String, description: String, checked: Boolean, change: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.weight(1f)) { Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium); Text(description, color = Muted, fontSize = 11.sp, lineHeight = 17.sp) }
+        Switch(checked = checked, onCheckedChange = change, modifier = Modifier.semantics { contentDescription = title })
+    }
+}
+@Composable private fun UpdatePanel(updater: AppUpdater, install: () -> Unit) {
+    val update by updater.state.collectAsStateWithLifecycle()
+    CardBlock {
+        Text("App updates · ${com.bitchat.android.BuildConfig.VERSION_NAME}", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+        Text("Internet downloads the app only. Rescue incidents use Bluetooth exclusively.", fontSize = 12.sp, lineHeight = 19.sp, color = Muted)
+        SettingSwitch("Check for updates when online", "At most once every six hours; no incident data is sent.", update.automaticChecks) { updater.configure(it, update.downloadOnWifi) }
+        SettingSwitch("Download updates on Wi-Fi", "Optional download. Android always asks before installation.", update.downloadOnWifi) { updater.configure(update.automaticChecks, it) }
+        Text(update.message, fontSize = 12.sp, color = Muted, lineHeight = 19.sp)
+        if (update.downloading) { LinearProgressIndicator(progress = { update.progress / 100f }, modifier = Modifier.fillMaxWidth(), color = Orange); TextButton(onClick = updater::cancelDownload) { Text("Cancel download · ${update.progress}%") } }
+        if (update.readyFile != null) Button(onClick = install) { Text("Install verified update") }
+        else if (update.offer != null && !update.downloading) Button(onClick = updater::download) { Text("Download ${update.offer!!.version}") }
+        OutlinedButton(onClick = { updater.check() }, enabled = !update.checking && !update.downloading) { Text(if (update.checking) "Checking…" else "Check for updates") }
+        Text("First installation may require Android’s ‘Allow from this source’ setting. Installation restarts the app; incidents remain saved.", fontSize = 10.sp, lineHeight = 17.sp, color = Muted)
+    }
+}
+private fun phaseTitle(phase: IncidentPhase): String = when (phase) {
+    IncidentPhase.QUEUED -> "Saved · waiting for a confirmed contact"
+    IncidentPhase.CARRIED -> "A relay has a copy"
+    IncidentPhase.DELIVERED -> "Trusted rescue node received this version"
+    IncidentPhase.CONFIRMED -> "Trusted operator confirmed this version"
+    IncidentPhase.EXPIRED -> "Expired · kept in local history"
+}
+private fun phaseExplanation(phase: IncidentPhase): String = when (phase) {
+    IncidentPhase.QUEUED -> "Stored on this phone. A transmit attempt alone is not proof that another device has it."
+    IncidentPhase.CARRIED -> "A device returned a signed receipt saying it saved a copy. Rescue delivery is still unconfirmed."
+    IncidentPhase.DELIVERED -> "The trusted rescue node returned a receipt. A human operator has not yet confirmed this revision."
+    IncidentPhase.CONFIRMED -> "The exact revision was acknowledged by the rescue identity you trust. This does not itself mean rescue was dispatched."
+    IncidentPhase.EXPIRED -> "The forwarding lifetime ended. Renew the SOS to create a fresh revision; the event history stays available."
+}
+private fun remaining(expires: Long, now: Long) = if (expires <= now) "Forwarding lifetime ended" else "${((expires - now + 59_999) / 60_000)} min left to forward"
 
 @Composable
 private fun Stat(label: String, value: String, modifier: Modifier = Modifier) {
@@ -175,6 +313,16 @@ fun OfflineDemoContent() {
     var demo by remember { mutableStateOf<RescueDemo?>(null) }
     var demoState by remember { mutableStateOf<DemoSnapshot?>(null) }
     var demoBusy by remember { mutableStateOf(false) }
+    var autoplay by remember { mutableStateOf(false) }
+    LaunchedEffect(autoplay) {
+        if (autoplay) {
+            while (demo != null && (demoState?.step ?: 8) < 8) {
+                delay(if (demoState?.step == 5) 4500L else 2500L)
+                demoState = withContext(Dispatchers.Default) { demo!!.advance() }
+            }
+            autoplay = false
+        }
+    }
     LaunchedEffect(Unit) { val created = withContext(Dispatchers.Default) { RescueDemo() }; demo = created; demoState = created.snapshot() }
                         Text("Make the network fail.\nWatch the message survive.", fontSize = 29.sp, lineHeight = 35.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-1).sp)
                         Text("ON-DEVICE SIMULATION · NO PHYSICAL PEERS", color = Orange, fontSize = 9.sp, letterSpacing = 1.sp)
@@ -193,9 +341,10 @@ fun OfflineDemoContent() {
                                 Text(if (d.confirmed) "✓ Latest revision confirmed" else "Latest revision is NOT confirmed", color = if (d.confirmed) Forest else Orange, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                             }
                             Button(onClick = { scope.launch { demoBusy = true; try { demoState = withContext(Dispatchers.Default) { demo!!.advance() } } finally { demoBusy = false } } },
-                                enabled = !demoBusy && d.step < 8, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) {
+                                enabled = !demoBusy && !autoplay && d.step < 8, modifier = Modifier.fillMaxWidth().height(52.dp), colors = ButtonDefaults.buttonColors(containerColor = Orange), shape = RoundedCornerShape(8.dp)) {
                                 Text(if (d.step == 0) "Start the demo" else if (d.step == 8) "Journey complete" else "Next contact / event →")
                             }
-                            TextButton(onClick = { scope.launch { demoBusy = true; try { val fresh = withContext(Dispatchers.Default) { RescueDemo() }; demo = fresh; demoState = fresh.snapshot() } finally { demoBusy = false } } }, enabled = !demoBusy) { Text("Reset simulated nodes") }
+                            OutlinedButton(onClick = { autoplay = !autoplay }, enabled = !demoBusy && d.step < 8, modifier = Modifier.fillMaxWidth()) { Text(if (autoplay) "Pause automatic walkthrough" else "Play full demo automatically") }
+                            TextButton(onClick = { scope.launch { demoBusy = true; try { val fresh = withContext(Dispatchers.Default) { RescueDemo() }; demo = fresh; demoState = fresh.snapshot() } finally { demoBusy = false } } }, enabled = !demoBusy && !autoplay) { Text("Reset simulated nodes") }
                         }
 }

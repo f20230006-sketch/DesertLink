@@ -30,6 +30,10 @@ The old SOS can still reach base first. An acknowledgment of that old message mu
 | Desktop network simulator | Working map, mobile relays, packet loss, expiry, route tracing, and returning ACKs |
 | Raspberry Pi | Not required; outside the current scope |
 
+## Download the Android app
+
+**[Get the v0.2.0 Android prerelease](https://github.com/f20230006-sketch/DesertLink/releases/tag/v0.2.0)** · ARM64 APK · Development-signed hackathon prototype.
+
 ## The demo
 
 <p align="center">
@@ -157,7 +161,7 @@ flowchart LR
 | Forwarding | Bounded cyclic gossip of unexpired records while BLE peers are available |
 | Browser simulator | React + TypeScript, FastAPI + WebSockets, SQLite node inventories |
 
-The Android relay loop currently follows the screen ViewModel lifecycle. The upstream BLE service has foreground-service support, but continuous background operation of the new rescue layer is not established. Keep the app open for the initial demo.
+The rescue store and forwarding scheduler now belong to a process-wide runtime and dedicated Bluetooth foreground service. Activity recreation does not own or cancel them. Android and vendor battery restrictions can still stop background operation, which needs physical-device validation.
 
 ## Validation
 
@@ -185,21 +189,26 @@ See [the deployment proposal](DEPLOYMENT.md) for convoy operations, power, envir
 
 ## Validation status
 
-- Android debug APK builds and is installed on a physical Android phone.
-- Six focused JVM tests pass: signature tampering, isolated updates, exact-revision ACKs, untrusted signers, stale replay, and the complete simulated contact journey.
-- Eight Python simulator tests pass.
-- Phone captures reached the old-ACK rejection and current-revision confirmation screens. The instrumentation harness did not terminate cleanly, so a fully passing automated device-test run is **not claimed**.
-- Android lint reports inherited upstream errors and warnings. Lint is **not clean**; the upstream build is configured not to fail on those findings.
-- A physical two-phone BLE exchange, long-duration background forwarding, and desert field performance remain unverified.
+- v0.2.0 APK builds, installs, and opens on a physical phone.
+- 14 focused rescue/operations/updater JVM tests pass; 5 backup tests pass.
+- 8 Python simulator tests pass.
+- The broad Android suite reported 25 failures among 860 tests, with 4 skipped, before a backup-contract fix. A baseline comparison has not established which remaining failures predate DESERTLINK changes.
+- Automated phone UI tests are blocked at activity launch / attachment; a full operational device-test pass is not claimed.
+- Upstream lint findings remain; lint is not clean.
+- Physical phone-to-phone BLE delivery remains unverified until a second phone or a suitable virtual-radio setup is available.
 
-## Validation status
+## Offline messaging and online app updates
 
-- Android debug APK: built and installed on a physical phone.
-- Focused rescue protocol JVM tests: 6 passing.
-- Python simulator tests: 8 passing.
-- Device walkthrough: captured the isolated update, old-ACK rejection, and current-revision confirmation screens. The instrumentation harness did not terminate cleanly, so this is not reported as a fully passing device test run.
-- Android lint: reports inherited upstream findings; it is not clean.
-- End-to-end physical BLE: unverified until a second phone is available.
+Rescue incidents travel through **Bluetooth only**. The dedicated DESERTLINK launcher does not start Bitchat’s Nostr, Tor, or Wi-Fi transports. Mobile data and Wi-Fi can be off during rescue messaging.
+
+Internet is optional and used by a separate updater:
+
+1. Check the public GitHub releases endpoint when online, at most every six hours while the app process is alive.
+2. Download manually, or enable optional automatic Wi-Fi downloads.
+3. Check HTTPS source, package name, newer version code, and the same signing certificate as the installed app. Compare GitHub’s SHA-256 digest when provided.
+4. Ask the user to approve installation through Android. An ordinary app cannot promise silent installation.
+
+Offline checks wait quietly. Update requests contain no incident payloads, peer identifiers, or location. Updates must use the same signing key; production signing and a CI signing-secret workflow are not configured. The first move from v0.1.0 to v0.2.0 is a manual APK installation because v0.1.0 has no updater.
 
 ## Open-source foundation & license
 
@@ -212,3 +221,14 @@ The upstream Android `LICENSE.md` contains **GPL-3.0**. This repository preserve
 ---
 
 **DESERTLINK — store it, carry it, forward it, confirm the right revision.**
+
+## Web deployment mode
+
+Vercel builds with `npm run build:demo`. The hosted site runs the contact simulator in each visitor’s browser, with isolated node queues, local persistence, and no Python server or WebSocket dependency. It is a software simulation, not an internet bridge for Android SOS messages. Local Python/SQLite mode remains available with `npm run build`.
+
+```powershell
+npm run test:browser
+npm run build:demo
+```
+
+[Full project context and remaining work](PROJECT_CONTEXT.md)

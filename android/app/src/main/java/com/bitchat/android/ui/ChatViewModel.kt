@@ -68,8 +68,7 @@ class ChatViewModel(
     private val debugManager by lazy { try { com.bitchat.android.ui.debug.DebugSettingsManager.getInstance() } catch (e: Exception) { null } }
 
     val rescue by lazy {
-        com.bitchat.android.desertlink.RescueStore(application, viewModelScope,
-            { wire -> meshService.sendMessage(wire) }, { meshService.getActivePeerCount() })
+        com.bitchat.android.desertlink.RescueRuntime.get(application)
     }
 
     companion object {

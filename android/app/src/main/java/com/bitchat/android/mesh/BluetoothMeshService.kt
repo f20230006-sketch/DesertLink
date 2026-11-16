@@ -122,7 +122,8 @@ class BluetoothMeshService(private val context: Context) : TransportBridgeServic
     )
     
     // Service state management
-    private var isActive = false
+    @Volatile private var isActive = false
+    fun isRunningForRescue(): Boolean = isActive
     
     // Delegate for message callbacks (maintains same interface)
     var delegate: BluetoothMeshDelegate? = null

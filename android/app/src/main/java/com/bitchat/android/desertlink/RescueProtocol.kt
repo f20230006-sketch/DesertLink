@@ -60,8 +60,14 @@ object RescueProtocol {
             "", sos.id, now, now + LIFETIME), keys)
     }
 
+    fun custody(keys: KeyPair, sos: RescueRecord, now: Long): RescueRecord {
+        val pub = Base64.getEncoder().encodeToString(keys.public.encoded)
+        return sign(RescueRecord("custody", sos.incident, sos.revision, pub, "", sos.id,
+            now, now + LIFETIME), keys)
+    }
+
     fun valid(r: RescueRecord, now: Long): Boolean = runCatching {
-        if (r.kind !in setOf("sos", "receipt", "ack") || r.revision < 1 ||
+        if (r.kind !in setOf("sos", "custody", "receipt", "ack") || r.revision < 1 ||
             r.text.length > 160 || r.publicKey.length > 200 || r.signature.length > 200 ||
             r.incident.length > 120 || r.target.length > 160 ||
             r.created > now + 300_000 || r.created < 0 || r.expires <= now ||
