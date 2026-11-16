@@ -4,6 +4,7 @@
 
 <p align="center"><strong>Emergency messages that travel with people, even when the network cannot.</strong></p>
 <p align="center">Android · Bluetooth Low Energy · Persistent incidents · Version-specific confirmation</p>
+<p align="center"><strong><a href="https://desertlink.vercel.app">Open the live interactive demo</a></strong> · <a href="https://github.com/f20230006-sketch/DesertLink/releases/tag/v0.2.0">Download Android APK</a></p>
 <p align="center">
   <a href="#try-it">Try it</a> · <a href="#the-demo">Watch the demo</a> · <a href="#what-we-added">Our contribution</a> · <a href="#build-the-android-app">Build Android</a> · <a href="#honest-boundaries">Limitations</a>
 </p>
@@ -224,7 +225,11 @@ The upstream Android `LICENSE.md` contains **GPL-3.0**. This repository preserve
 
 ## Web deployment mode
 
+**Live demo: [desertlink.vercel.app](https://desertlink.vercel.app)** — Send SOS, advance the simulation until rescue receives it, click **Acknowledge**, and continue until **Confirmed at source**. Packet loss can delay both journeys.
+
 Vercel builds with `npm run build:demo`. The hosted site runs the contact simulator in each visitor’s browser, with isolated node queues, local persistence, and no Python server or WebSocket dependency. It is a software simulation, not an internet bridge for Android SOS messages. Local Python/SQLite mode remains available with `npm run build`.
+
+Production is deployed through the Vercel CLI. Automatic deployment from GitHub pushes is not configured yet.
 
 ```powershell
 npm run test:browser

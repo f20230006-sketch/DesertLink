@@ -26,6 +26,7 @@ The signature differentiates author identity from relay transport. A chosen role
 - The Raspberry Pi is out of scope because no SD card is available.
 - Virtual testing with Android Emulator/Netsim is planned. Multi-emulator Bluetooth behavior has not been verified.
 - The browser simulator remains a working visualization and fault-injection demo.
+- Public hosted demo: https://desertlink.vercel.app . Verified SOS delivery, manual operator acknowledgment, and returned source confirmation on the production site. Vercel CLI deployment works; automatic GitHub deployments are not configured.
 
 ## Versions and source
 
