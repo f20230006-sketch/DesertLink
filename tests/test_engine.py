@@ -77,6 +77,35 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(len(self.sim.inventory("relay1")), 2)
         self.assertEqual(self.sim.world["transfers"], 2)
 
+    def test_offline_revision_does_not_teleport_and_old_ack_is_version_specific(self):
+        old = self.sim.send("Need water")
+        self.sim.step(60)
+        carried = self.sim.inventory("relay1")[0]
+        for n in self.sim.world["nodes"]:
+            if n["role"] == "mobile":
+                n["online"] = False
+        new = self.sim.send("Medical emergency", incident=old)
+        self.assertEqual(self.sim.inventory("safari")[0]["id"], new)
+        self.assertEqual(self.sim.inventory("relay1")[0]["id"], old)
+        self.assertFalse(self.sim.put("safari", carried))
+        self.assertEqual(self.sim.inventory("safari")[0]["version"], 2)
+        self.sim.put("base", carried)
+        old_record = next(m for m in self.sim.world["messages"] if m["id"] == old)
+        old_record["delivered"] = self.sim.world["time"]
+        self.sim.acknowledge(old)
+        self.assertIsNone(self.sim.world["messages"][0]["confirmed"])
+        self.assertEqual(self.sim.world["messages"][0]["status"], "queued")
+        base_messages = [p for p in self.sim.inventory("base") if p["kind"] == "message"]
+        self.assertEqual(base_messages[0]["version"], 1)
+
+    def test_new_revision_replaces_older_payload_at_contact(self):
+        self.sim.world["config"]["speed"] = 0
+        old = self.sim.send("Initial SOS")
+        self.sim.step(30)
+        new = self.sim.send("Updated SOS", incident=old)
+        self.sim.step(30)
+        self.assertEqual([p["id"] for p in self.sim.inventory("relay1")], [new])
+
     def test_offline_relays_cannot_receive(self):
         for n in self.sim.world["nodes"]:
             if n["role"] == "mobile":
